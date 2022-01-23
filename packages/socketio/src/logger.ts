@@ -1,7 +1,7 @@
 import { MidwayContextLogger } from '@midwayjs/logger';
-import { IMidwaySocketIOContext } from './interface';
+import { Context } from './interface';
 
-export class MidwaySocketIOContextLogger extends MidwayContextLogger<IMidwaySocketIOContext> {
+export class MidwaySocketIOContextLogger extends MidwayContextLogger<Context> {
   formatContextLabel() {
     // format: '[$userId/$ip/$traceId/$use_ms $method $url]'
     // const userId = req?.['session']?.['userId'] || '-';

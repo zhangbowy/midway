@@ -1,17 +1,10 @@
 import {
   BaseFramework,
   HTTP_SERVER_KEY,
-  IMidwayBootstrapOptions,
   MidwayFrameworkType,
 } from '@midwayjs/core';
-import { debuglog } from 'util';
-const debug = debuglog('midway:socket.io');
 
-import {
-  IMidwaySocketIOApplication,
-  IMidwaySocketIOConfigurationOptions,
-  IMidwaySocketIOContext,
-} from './interface';
+import { Application, IMidwaySocketIOOptions, Context } from './interface';
 import { Server } from 'socket.io';
 import {
   WS_CONTROLLER_KEY,
@@ -24,33 +17,28 @@ import {
   Framework,
 } from '@midwayjs/decorator';
 import { MidwaySocketIOContextLogger } from './logger';
+import { debuglog } from 'util';
+const debug = debuglog('midway:socket.io');
 
 @Framework()
 export class MidwaySocketIOFramework extends BaseFramework<
-  IMidwaySocketIOApplication,
-  IMidwaySocketIOContext,
-  IMidwaySocketIOConfigurationOptions
+  Application,
+  Context,
+  IMidwaySocketIOOptions
 > {
   private namespaceList = [];
+  public app: Application;
 
-  configure(): IMidwaySocketIOConfigurationOptions {
+  configure(): IMidwaySocketIOOptions {
     return this.configService.getConfiguration('socketIO');
   }
 
-  applicationInitialize(options: IMidwayBootstrapOptions) {
-    this.app = new Server(
-      this.configurationOptions
-    ) as IMidwaySocketIOApplication;
-  }
-  public app: IMidwaySocketIOApplication;
-
-  protected async afterContainerReady(
-    options: Partial<IMidwayBootstrapOptions>
-  ): Promise<void> {
-    await this.loadMidwayController();
+  applicationInitialize() {
+    this.app = new Server(this.configurationOptions) as Application;
   }
 
   public async run(): Promise<void> {
+    await this.loadMidwayController();
     if (this.configurationOptions.adapter) {
       this.app.adapter(this.configurationOptions.adapter);
       this.logger.debug('init socket.io-redis ready!');
@@ -106,6 +94,8 @@ export class MidwaySocketIOFramework extends BaseFramework<
 
     const nsp = this.app.of(controllerOption.namespace);
     this.namespaceList.push(controllerOption.namespace);
+    const controllerMiddleware =
+      controllerOption.routerOptions.middleware ?? [];
 
     nsp.use((socket: any, next) => {
       this.app.createAnonymousContext(socket);
@@ -114,7 +104,7 @@ export class MidwaySocketIOFramework extends BaseFramework<
       next();
     });
 
-    nsp.on('connect', async (socket: IMidwaySocketIOContext) => {
+    nsp.on('connect', async (socket: Context) => {
       const wsEventInfos: WSEventInfo[] = getClassMetadata(
         WS_EVENT_KEY,
         target
@@ -153,11 +143,21 @@ export class MidwaySocketIOFramework extends BaseFramework<
               try {
                 const result = await (
                   await this.applyMiddleware(async (ctx, next) => {
-                    // eslint-disable-next-line prefer-spread
-                    return controller[wsEventInfo.propertyName].apply(
-                      controller,
-                      args
+                    // add controller middleware
+                    const fn = await this.middlewareService.compose(
+                      [
+                        ...controllerMiddleware,
+                        async (ctx, next) => {
+                          // eslint-disable-next-line prefer-spread
+                          return controller[wsEventInfo.propertyName].apply(
+                            controller,
+                            args
+                          );
+                        },
+                      ],
+                      this.app
                     );
+                    return await fn(ctx, next);
                   })
                 )(socket);
                 if (typeof args[args.length - 1] === 'function') {
@@ -215,7 +215,7 @@ export class MidwaySocketIOFramework extends BaseFramework<
 
   private async bindSocketResponse(
     result: any,
-    socket: IMidwaySocketIOContext,
+    socket: Context,
     propertyName: string,
     methodMap: {
       responseEvents?: WSEventInfo[];
