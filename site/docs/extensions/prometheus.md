@@ -185,6 +185,41 @@ http://${prometheus的ip}:9090/classic/targets
 ```bash
 $ docker run -d --name=grafana -p 3000:3000 grafana/grafana
 ```
+或将Grafana和prometheus放在一起用docker-compose统一管理
+```yml
+version: '2.2'
+services:
+  tapi:
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '50m'
+    image: prom/prometheus
+    restart: always
+    volumes:
+      - ./prometheus_data:/prometheus_data:rw
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./targets.json:/etc/prometheus/targets.json
+    command:
+      - '--storage.tsdb.path=/prometheus_data'
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention=10d'
+      - '--web.enable-lifecycle'
+    ports:
+      - '9090:9090'
+  grafana:
+    image: grafana/grafana
+    container_name: "grafana0"
+    ports:
+      - "3000:3000"
+    restart: always
+    volumes:
+      - "/etc/localtime:/etc/localtime:ro"
+      - "/etc/timezone:/etc/timezone:ro"
+      - "./grafana_data:/var/lib/grafana"
+      - "./grafana_log:/var/log/grafana"
+      - "./grafana_data/crypto_data:/crypto_data"
+```
 
 然后我们访问 127.0.0.1:3000，默认账号密码：admin:admin。
 然后访问后如下效果：
